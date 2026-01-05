@@ -1,18 +1,27 @@
 <script lang="ts">
     import { editorStore } from '$lib/stores/editor.svelte';
-    import { FileText, Folder, FolderOpen, Menu, Save, Eye, PenLine, ArrowLeft } from '@lucide/svelte';
+    import { 
+        FileText, Folder, Save, Eye, PenLine, Trash2,
+        ArrowLeft, Plus, FolderPlus, Download, ChevronDown,
+        PanelLeftClose, PanelLeftOpen // Icon tambahan untuk toggle
+    } from '@lucide/svelte';
     import { marked } from 'marked';
+    import { save } from '@tauri-apps/plugin-dialog';
+    import { writeFile } from '@tauri-apps/plugin-fs';
+    import { jsPDF } from 'jspdf';
+    import * as docx from 'docx';
+    const { Document, Packer, Paragraph, TextRun, Footer, PageNumber } = docx;
 
-    let isSidebarOpen = $state(true);
     let isPreviewMode = $state(false);
     let isSaving = $state(false);
-
-    function toggleSidebar() { isSidebarOpen = !isSidebarOpen; }
+    let showExportMenu = $state(false);
+    let isSidebarOpen = $state(true); // State untuk kontrol sidebar
 
     async function handleSave() {
+        if (!editorStore.activeFileName) return;
         isSaving = true;
         await editorStore.saveContent();
-        setTimeout(() => { isSaving = false; }, 800);
+        setTimeout(() => (isSaving = false), 800);
     }
 
     function handleKeydown(e: KeyboardEvent) {
@@ -22,111 +31,254 @@
         }
     }
 
+    async function runExport(format: string) {
+        showExportMenu = false;
+        const content = await editorStore.getMergedContent();
+        const folderName = editorStore.currentPath.split('/').pop() || 'naskah';
+
+        const path = await save({
+            filters: [{ name: format, extensions: [format.toLowerCase()] }],
+            defaultPath: `${folderName}.${format.toLowerCase()}`
+        });
+
+        if (!path) return;
+
+        try {
+            if (format === 'MD') {
+                await writeFile(path, new TextEncoder().encode(content));
+            } else if (format === 'PDF') {
+                const doc = new jsPDF();
+                const pageWidth = doc.internal.pageSize.getWidth();
+                const pageHeight = doc.internal.pageSize.getHeight();
+                const margin = 15;
+                const lines = doc.splitTextToSize(content, pageWidth - margin * 2);
+                let cursorY = margin;
+
+                lines.forEach((line: string) => {
+                    if (cursorY > pageHeight - margin) {
+                        doc.addPage();
+                        cursorY = margin;
+                    }
+                    doc.text(line, margin, cursorY);
+                    cursorY += 7;
+                });
+                await writeFile(path, new Uint8Array(doc.output('arraybuffer')));
+            } else if (format === 'DOCX') {
+                const lines = content.split('\n');
+                const docChildren: any[] = [];
+
+                lines.forEach((line) => {
+                    const trimmedLine = line.trim();
+                    if (trimmedLine.startsWith('# ')) {
+                        docChildren.push(
+                            new Paragraph({
+                                text: trimmedLine.replace('# ', ''),
+                                heading: 'Heading1',
+                                spacing: { before: 400, after: 200 }
+                            })
+                        );
+                    } else if (trimmedLine === '---') {
+                        docChildren.push(
+                            new Paragraph({
+                                border: { bottom: { color: 'auto', space: 1, style: 'single', size: 6 } },
+                                spacing: { after: 200 }
+                            })
+                        );
+                    } else if (trimmedLine !== '') {
+                        docChildren.push(
+                            new Paragraph({
+                                children: [new TextRun({ text: trimmedLine, size: 24, font: 'Courier New' })],
+                                spacing: { line: 360, after: 200 },
+                                alignment: 'both'
+                            })
+                        );
+                    }
+                });
+
+                const doc = new Document({
+                    sections: [
+                        {
+                            footers: {
+                                default: new Footer({
+                                    children: [
+                                        new Paragraph({
+                                            alignment: 'center',
+                                            children: [new TextRun('Halaman '), new TextRun({ children: [PageNumber.CURRENT] })]
+                                        })
+                                    ]
+                                })
+                            },
+                            children: docChildren
+                        }
+                    ]
+                });
+
+                const blob = await Packer.toBlob(doc);
+                const arrayBuffer = await blob.arrayBuffer();
+                await writeFile(path, new Uint8Array(arrayBuffer));
+            }
+            alert('Export Berhasil ke: ' + path);
+        } catch (err) {
+            alert('Gagal export: ' + err);
+        }
+    }
+
     let renderedContent = $derived(marked.parse(editorStore.content));
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="h-screen flex overflow-hidden bg-surface-50 text-surface-900 font-typewriter">
-    
-    <aside class={`
-        w-64 bg-surface-100 border-r border-surface-200 flex flex-col transition-all duration-300
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full absolute z-50 h-full'}
-        md:relative md:translate-x-0
-    `}>
-        <div class="p-4 border-b border-surface-200 flex items-center gap-3">
-            <img src="/app-icon.png" alt="Logo" class="w-8 h-8 pixelated" />
-            <span class="font-bold text-lg tracking-tight">MilkyNote</span>
+<div class="h-screen flex bg-surface-50 text-surface-900 overflow-hidden font-sans">
+    <aside 
+        class="bg-surface-100 border-r border-surface-200 flex flex-col transition-all duration-300 ease-in-out overflow-hidden"
+        style="width: {isSidebarOpen ? '260px' : '0px'}; opacity: {isSidebarOpen ? '1' : '0'}"
+    >
+        <div class="p-4 border-b flex items-center justify-between bg-white/50 min-w-[260px]">
+            <span class="font-bold tracking-tight text-primary-900">MilkyNote</span>
+            <div class="flex gap-1">
+                <button
+                    onclick={() => editorStore.createNewFolder(prompt('Nama Folder Baru:') || '')}
+                    class="p-1 hover:bg-surface-200 rounded text-surface-600"
+                    title="Folder Baru"><FolderPlus size={16} /></button
+                >
+                <button
+                    onclick={() => editorStore.createNewFile(prompt('Nama File Baru:') || '')}
+                    class="p-1 hover:bg-surface-200 rounded text-surface-600"
+                    title="File Baru"><Plus size={18} /></button
+                >
+            </div>
         </div>
 
         {#if editorStore.currentPath !== editorStore.rootPath}
-            <div class="p-2 border-b border-surface-200 bg-surface-200/50">
-                <button 
-                    class="flex items-center gap-2 text-sm text-surface-700 hover:text-primary-700 w-full px-2 py-1"
-                    onclick={() => editorStore.goBack()}
-                >
-                    <ArrowLeft size={16} />
-                    <span>Kembali / Back</span>
-                </button>
-            </div>
+            <button
+                class="flex items-center gap-2 p-2 text-xs font-bold uppercase tracking-wider bg-surface-200/50 hover:bg-surface-200 border-b border-surface-200 min-w-[260px]"
+                onclick={() => editorStore.goBack()}
+            >
+                <ArrowLeft size={14} /> Kembali
+            </button>
         {/if}
 
-        <div class="flex-1 overflow-y-auto p-2 space-y-1">
+        <div class="flex-1 overflow-y-auto p-2 space-y-0.5 min-w-[260px]">
             {#each editorStore.files as file}
-                <button 
-                    class={`flex items-center gap-2 text-sm w-full text-left py-1.5 px-2 rounded-md transition-colors
-                    ${editorStore.activeFileId === file.name ? 'bg-primary-100 text-primary-900 font-bold' : 'text-surface-600 hover:bg-surface-200'}
-                    `}
-                    onclick={() => editorStore.handleItemClick(file)}
-                >
-                    {#if file.is_dir}
-                        <Folder size={16} class="text-yellow-600 fill-yellow-100" />
-                    {:else}
-                        <FileText size={14} class="text-surface-400" />
-                    {/if}
-                    
-                    <span class="truncate">{file.name}</span>
-                </button>
+                <div class="group flex items-center gap-1">
+                    <button
+                        class="flex-1 flex items-center gap-2 text-sm p-2 rounded transition-all {editorStore.activeFileId ===
+                        file.name
+                            ? 'bg-primary-100 text-primary-950 font-medium'
+                            : 'hover:bg-surface-200'}"
+                        onclick={() => editorStore.handleItemClick(file)}
+                    >
+                        {#if file.is_dir}<Folder
+                                size={16}
+                                class="text-yellow-600 fill-yellow-100"
+                            />{:else}<FileText size={14} class="opacity-50" />{/if}
+                        <span class="truncate">{file.name}</span>
+                    </button>
+
+                    <div class="hidden group-hover:flex gap-1 pr-1">
+                        <button
+                            onclick={() => editorStore.renameItem(file.name)}
+                            class="p-1 hover:text-primary-600 opacity-50 hover:opacity-100"
+                            ><PenLine size={12} /></button
+                        >
+                        <button
+                            onclick={() => editorStore.deleteItem(file.name)}
+                            class="p-1 hover:text-red-600 opacity-50 hover:opacity-100"
+                            ><Trash2 size={12} /></button
+                        >
+                    </div>
+                </div>
             {/each}
-        </div>
-        
-        <div class="p-2 text-[10px] text-surface-400 break-all border-t border-surface-200">
-            {editorStore.currentPath.replace('/home/priosmilky/Documents', '...')}
         </div>
     </aside>
 
-    <main class="flex-1 flex flex-col h-full bg-white relative">
-        <header class="h-14 border-b border-surface-200 flex items-center justify-between px-6 bg-surface-50/50 backdrop-blur-sm">
+    <main class="flex-1 flex flex-col bg-white overflow-hidden">
+        <header
+            class="h-14 border-b flex items-center justify-between px-6 bg-surface-50/30 backdrop-blur-sm"
+        >
             <div class="flex items-center gap-4">
-                <button class="md:hidden p-2 hover:bg-surface-200 rounded" onclick={toggleSidebar}>
-                    <Menu size={20} />
+                <button 
+                    onclick={() => isSidebarOpen = !isSidebarOpen}
+                    class="p-2 hover:bg-surface-200 rounded-md transition-colors text-surface-600"
+                    title={isSidebarOpen ? "Sembunyikan Sidebar" : "Tampilkan Sidebar"}
+                >
+                    {#if isSidebarOpen}<PanelLeftClose size={20}/>{:else}<PanelLeftOpen size={20}/>{/if}
                 </button>
-                <div class="text-sm breadcrumbs">
-                    <span class="opacity-50">Editor /</span>
-                    <span class="font-bold">{editorStore.activeFileName || '...'}</span>
+
+                <div class="text-sm font-medium opacity-70 italic">
+                    {editorStore.activeFileName || 'Menunggu naskah...'}
                 </div>
             </div>
-            
+
             <div class="flex items-center gap-3">
-                <button class="p-1.5 rounded hover:bg-surface-200" onclick={() => isPreviewMode = !isPreviewMode}>
+                <div class="relative">
+                    <button
+                        onclick={() => (showExportMenu = !showExportMenu)}
+                        class="flex items-center gap-1 text-xs bg-surface-200 px-3 py-1.5 rounded hover:bg-surface-300 transition-colors"
+                    >
+                        <Download size={14} /> Export <ChevronDown size={12} />
+                    </button>
+                    {#if showExportMenu}
+                        <div
+                            class="absolute right-0 mt-2 w-40 bg-white border border-surface-200 shadow-xl rounded-md z-50 flex flex-col py-1"
+                        >
+                            <button
+                                onclick={() => runExport('PDF')}
+                                class="px-4 py-2 text-left text-sm hover:bg-primary-50">PDF (.pdf)</button
+                            >
+                            <button
+                                onclick={() => runExport('DOCX')}
+                                class="px-4 py-2 text-left text-sm hover:bg-primary-50"
+                                >Word (.docx)</button
+                            >
+                            <button
+                                onclick={() => runExport('MD')}
+                                class="px-4 py-2 text-left text-sm hover:bg-primary-50"
+                                >Markdown (.md)</button
+                            >
+                        </div>
+                    {/if}
+                </div>
+                <button
+                    onclick={() => (isPreviewMode = !isPreviewMode)}
+                    class="p-2 hover:bg-surface-200 rounded-full transition-colors"
+                >
                     {#if isPreviewMode}<PenLine size={18} />{:else}<Eye size={18} />{/if}
                 </button>
-                <button onclick={handleSave} class="text-xs flex items-center gap-1 {isSaving ? 'text-primary-600' : 'text-surface-400'}">
-                    <Save size={14} /> {isSaving ? 'Saving...' : 'Simpan'}
+                <button
+                    onclick={handleSave}
+                    class="p-2 hover:bg-surface-200 rounded-full transition-colors {isSaving
+                        ? 'text-primary-600'
+                        : 'text-surface-400'}"
+                >
+                    <Save size={18} />
                 </button>
             </div>
         </header>
 
-        <div class="flex-1 overflow-y-auto relative">
-            <div class="max-w-3xl mx-auto px-8 py-10 min-h-full flex flex-col">
+        <div class="flex-1 overflow-y-auto p-10 bg-[#fdfdfd]">
+            <div class="max-w-3xl mx-auto h-full">
                 {#if isPreviewMode}
-                    <article class="prose prose-slate max-w-none font-sans">
-                        {@html renderedContent}
-                    </article>
+                    <article class="prose prose-slate max-w-none">{@html renderedContent}</article>
                 {:else}
                     <textarea
                         bind:value={editorStore.content}
-                        class="w-full flex-1 bg-transparent border-none focus:ring-0 resize-none outline-none text-lg leading-relaxed text-surface-700 font-typewriter"
-                        placeholder="Klik folder di kiri untuk membuka file..."
-                        spellcheck="false"
+                        class="w-full h-full resize-none outline-none leading-relaxed text-surface-800 bg-transparent"
+                        style="font-family: 'Courier Prime', 'Courier New', monospace; font-size: 14px;"
+                        placeholder="Ketukan tuts mesin tik menantimu..."
                     ></textarea>
                 {/if}
-                <div class="h-20"></div>
             </div>
         </div>
-        
-        <div class="h-8 bg-surface-100 border-t border-surface-200 flex items-center justify-between px-4 text-xs font-mono text-surface-500">
+
+        <footer
+            class="h-8 bg-surface-100/50 border-t flex items-center justify-between px-4 text-[10px] font-mono text-surface-400 uppercase tracking-widest"
+        >
             <div class="flex gap-4">
-                <span>{editorStore.wordCount} WORDS</span>
-                <span>{editorStore.charCount} CHARS</span>
+                <span>{editorStore.wordCount} Kata</span>
+                <span>{editorStore.charCount} Karakter</span>
             </div>
-        </div>
+            <div>MilkyNote v1.0</div>
+        </footer>
     </main>
 </div>
-
-<style>
-    :global(.prose h1) { font-size: 2.25em; font-weight: 800; margin-bottom: 0.5em; letter-spacing: -0.025em; }
-    :global(.prose h2) { font-size: 1.5em; font-weight: 700; margin-top: 1.5em; margin-bottom: 0.5em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3em; }
-    :global(.prose p) { margin-bottom: 1.25em; line-height: 1.75; }
-    :global(.prose ul) { list-style-type: disc; padding-left: 1.5em; margin-bottom: 1.25em; }
-</style>

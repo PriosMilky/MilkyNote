@@ -1,108 +1,111 @@
-// src/lib/stores/editor.svelte.ts
-import { readDir, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+import { readDir, readTextFile, writeTextFile, mkdir, remove, rename } from '@tauri-apps/plugin-fs';
 
-// Helper: Cek apakah jalan di Tauri
 // @ts-ignore
 const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined;
 
 export class EditorStore {
-    // State
     activeFileId = $state<string | null>(null);
     activeFileName = $state<string>(''); 
     content = $state<string>('');
     files = $state<any[]>([]);
-    
-    // Path Management
-    rootPath = '/home/priosmilky/Documents/Note'; // Path awal (Home)
-    currentPath = $state('/home/priosmilky/Documents/Note'); // Path yang sedang dibuka
+    rootPath = '/home/priosmilky/Documents/Note'; 
+    currentPath = $state('/home/priosmilky/Documents/Note'); 
 
     wordCount = $derived(this.content.trim() === '' ? 0 : this.content.trim().split(/\s+/).length);
     charCount = $derived(this.content.length);
 
-    constructor() {
-        this.loadFiles();
-    }
+    constructor() { this.loadFiles(); }
 
-    // Fungsi membaca isi folder (sesuai currentPath)
     async loadFiles() {
-        if (!isTauri) {
-            this.files = [{ name: 'Mode Browser (Demo)', id: 'demo', is_dir: false }];
-            return;
-        }
-
+        if (!isTauri) return;
         try {
-            // Baca folder dinamis (bukan hardcoded root lagi)
             const entries = await readDir(this.currentPath);
-            
             this.files = entries
-                .map(entry => ({
-                    name: entry.name,
-                    id: entry.name,
-                    is_dir: entry.isDirectory
-                }))
+                .map(entry => ({ name: entry.name, id: entry.name, is_dir: entry.isDirectory }))
                 .sort((a, b) => {
-                    // Folder di atas, File di bawah
-                    if (a.is_dir === b.is_dir) return a.name.localeCompare(b.name);
-                    return a.is_dir ? -1 : 1;
+                    if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+                    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
                 });
-
-        } catch (err) {
-            console.error("Gagal baca folder:", err);
-            this.content = `# Error\nGagal membuka: ${this.currentPath}\n${err}`;
-        }
+        } catch (err) { console.error(err); }
     }
 
-    // Fungsi Utama: Menangani Klik di Sidebar
-    async handleItemClick(item: any) {
-        // 1. Jika FOLDER -> Masuk ke dalamnya
-        if (item.is_dir) {
-            this.currentPath = `${this.currentPath}/${item.name}`; // Update path
-            this.activeFileId = null; // Reset seleksi
-            await this.loadFiles(); // Reload list
-            return;
-        }
-
-        // 2. Jika FILE -> Baca isinya
-        this.activeFileName = item.name;
-        this.activeFileId = item.name;
-        this.loadFileContent(item.name);
-    }
-
-    // Fungsi Mundur Satu Folder (Back)
-    async goBack() {
-        // Jangan mundur kalau sudah di root folder
-        if (this.currentPath === this.rootPath) return;
-
-        // Potong path terakhir (misal: /Note/FolderA -> /Note)
-        const lastSlashIndex = this.currentPath.lastIndexOf('/');
-        this.currentPath = this.currentPath.substring(0, lastSlashIndex);
-        
+    async createNewFile(name: string) {
+        if (!isTauri || !name) return;
+        const fileName = name.endsWith('.md') ? name : `${name}.md`;
+        await writeTextFile(`${this.currentPath}/${fileName}`, `# ${name}\n\n`);
         await this.loadFiles();
     }
 
-    // Fungsi baca file .md
-    async loadFileContent(fileName: string) {
+    async createNewFolder(name: string) {
+        if (!isTauri || !name) return;
+        await mkdir(`${this.currentPath}/${name}`);
+        await this.loadFiles();
+    }
+
+    async renameItem(oldName: string) {
+        const newName = prompt("Masukkan nama baru:", oldName);
+        if (!newName || newName === oldName) return;
+        await rename(`${this.currentPath}/${oldName}`, `${this.currentPath}/${newName}`);
+        if (this.activeFileName === oldName) {
+            this.activeFileName = newName;
+            this.activeFileId = newName;
+        }
+        await this.loadFiles();
+    }
+
+    async deleteItem(name: string) {
+        if (!confirm(`Hapus "${name}"?`)) return;
+        await remove(`${this.currentPath}/${name}`, { recursive: true });
+        if (this.activeFileName === name) {
+            this.content = ""; this.activeFileName = ""; this.activeFileId = null;
+        }
+        await this.loadFiles();
+    }
+
+    async getMergedContent() {
+        if (!isTauri) return this.content;
         try {
-            const fullPath = `${this.currentPath}/${fileName}`;
-            const text = await readTextFile(fullPath);
-            this.content = text;
-        } catch (err) {
-            console.error("Error baca file:", err);
-            this.content = `Error: ${err}`;
+            const entries = await readDir(this.currentPath);
+            const mdFiles = entries
+                .filter(e => !e.isDirectory && e.name.endsWith('.md'))
+                .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+            let merged = "";
+            for (const f of mdFiles) {
+                const text = await readTextFile(`${this.currentPath}/${f.name}`);
+                merged += `\n\n# ${f.name.replace('.md', '')}\n\n${text}\n\n---\n`;
+            }
+            return merged;
+        } catch (err) { return this.content; }
+    }
+
+    async handleItemClick(item: any) {
+        if (item.is_dir) {
+            this.currentPath = `${this.currentPath}/${item.name}`;
+            this.activeFileId = null;
+            await this.loadFiles();
+        } else {
+            this.activeFileName = item.name;
+            this.activeFileId = item.name;
+            this.loadFileContent(item.name);
         }
     }
 
-    // Fungsi Simpan
+    async goBack() {
+        if (this.currentPath === this.rootPath) return;
+        const lastSlashIndex = this.currentPath.lastIndexOf('/');
+        this.currentPath = this.currentPath.substring(0, lastSlashIndex);
+        await this.loadFiles();
+    }
+
+    async loadFileContent(fileName: string) {
+        const text = await readTextFile(`${this.currentPath}/${fileName}`);
+        this.content = text;
+    }
+
     async saveContent() {
-        if (!isTauri || !this.activeFileName) return;
-        try {
-            const fullPath = `${this.currentPath}/${this.activeFileName}`;
-            await writeTextFile(fullPath, this.content);
-            console.log("Tersimpan:", fullPath);
-        } catch (err) {
-            console.error("Gagal save:", err);
+        if (isTauri && this.activeFileName) {
+            await writeTextFile(`${this.currentPath}/${this.activeFileName}`, this.content);
         }
     }
 }
-
 export const editorStore = new EditorStore();

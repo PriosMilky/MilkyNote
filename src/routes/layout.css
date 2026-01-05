@@ -1,17 +1,35 @@
 @import 'tailwindcss';
 
-/* Skeleton Setup */
 @import '@skeletonlabs/skeleton';
 @import '@skeletonlabs/skeleton-svelte';
+@import '@skeletonlabs/skeleton/themes/cerberus';
 
-/* Kita pakai tema cerberus dulu sebagai base, 
-   nanti kita kustomisasi warnanya agar sesuai logo 'Milky' (Biru/Putih) */
-@import '@skeletonlabs/skeleton/themes/cerberus'; 
+/* Konfigurasi Font Mesin Tik */
+@theme {
+    --font-typewriter: "Courier Prime", monospace;
+}
 
-/* Font Pixel (Opsional, biar makin retro sesuai logo) */
-/* @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap'); */
-
+/* Global Styles */
 body {
-    /* Biar background tidak terlalu gelap/terang, kita sesuaikan nanti */
-    @apply bg-surface-50-950; 
+    background-color: var(--color-surface-50);
+    color: var(--color-surface-900);
+    font-family: var(--font-typewriter);
+}
+
+/* Scrollbar Minimalis */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--color-surface-300);
+    border-radius: 4px;
+}
+
+/* Utilitas Pixel Art */
+.pixelated {
+    image-rendering: pixelated;
 }

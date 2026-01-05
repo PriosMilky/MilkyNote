@@ -1,0 +1,17 @@
+@import 'tailwindcss';
+
+/* Skeleton Setup */
+@import '@skeletonlabs/skeleton';
+@import '@skeletonlabs/skeleton-svelte';
+
+/* Kita pakai tema cerberus dulu sebagai base, 
+   nanti kita kustomisasi warnanya agar sesuai logo 'Milky' (Biru/Putih) */
+@import '@skeletonlabs/skeleton/themes/cerberus'; 
+
+/* Font Pixel (Opsional, biar makin retro sesuai logo) */
+/* @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap'); */
+
+body {
+    /* Biar background tidak terlalu gelap/terang, kita sesuaikan nanti */
+    @apply bg-surface-50-950; 
+}

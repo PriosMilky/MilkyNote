@@ -5,6 +5,10 @@ import { sveltekit } from '@sveltejs/kit/vite';
 
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
+	server: {
+    host: '0.0.0.0', // Ini memberitahu Vite untuk menerima koneksi dari mana saja di jaringan
+    port: 5173
+  },
 
 	test: {
 		expect: { requireAssertions: true },

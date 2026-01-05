@@ -3,24 +3,47 @@
     import { 
         FileText, Folder, Save, Eye, PenLine, Trash2,
         ArrowLeft, Plus, FolderPlus, Download, ChevronDown,
-        PanelLeftClose, PanelLeftOpen // Icon tambahan untuk toggle
+        PanelLeftClose, PanelLeftOpen 
     } from '@lucide/svelte';
     import { marked } from 'marked';
     import { save } from '@tauri-apps/plugin-dialog';
     import { writeFile } from '@tauri-apps/plugin-fs';
     import { jsPDF } from 'jspdf';
     import * as docx from 'docx';
+    import { type } from '@tauri-apps/plugin-os'; // Import untuk deteksi platform di UI
+
     const { Document, Packer, Paragraph, TextRun, Footer, PageNumber } = docx;
 
     let isPreviewMode = $state(false);
     let isSaving = $state(false);
     let showExportMenu = $state(false);
-    let isSidebarOpen = $state(true); // State untuk kontrol sidebar
+    let isSidebarOpen = $state(true); // Default sidebar terbuka di desktop
+    let hasUnsavedChanges = $state(false);
+    let isMobile = $state(false); // State untuk mendeteksi mode mobile
+
+    // Deteksi platform saat aplikasi pertama kali dimuat
+    $effect(() => {
+        // Buat fungsi internal async agar TypeScript tidak error
+        async function checkPlatform() {
+            try {
+                const platform = await type();
+                isMobile = (platform === 'android' || platform === 'ios');
+                if (isMobile) {
+                    isSidebarOpen = false; 
+                }
+            } catch (e) {
+                console.error("Gagal deteksi platform:", e);
+            }
+        }
+        
+        checkPlatform();
+    });
 
     async function handleSave() {
         if (!editorStore.activeFileName) return;
         isSaving = true;
         await editorStore.saveContent();
+        hasUnsavedChanges = false; // Reset indikator
         setTimeout(() => (isSaving = false), 800);
     }
 
@@ -29,11 +52,31 @@
             e.preventDefault();
             handleSave();
         }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'b' && !isMobile) { // Shortcut sidebar hanya di desktop
+            e.preventDefault();
+            isSidebarOpen = !isSidebarOpen; 
+        }
     }
+
+    // Deteksi perubahan konten untuk indikator "Belum Disimpan"
+    $effect(() => {
+        if (editorStore.content && editorStore.activeFileId) {
+            // Bisa diperbaiki dengan membandingkan konten awal, tapi ini cukup untuk indikator cepat
+            hasUnsavedChanges = true;
+        }
+    });
 
     async function runExport(format: string) {
         showExportMenu = false;
         const content = await editorStore.getMergedContent();
+        // Export di mobile akan berbeda, biasanya tidak ada dialog "Save As"
+        // Untuk sekarang, kita asumsikan ini hanya akan dipakai di Desktop
+        // Atau kamu perlu implementasi share sheet di mobile
+        if (isMobile) {
+             alert('Fitur export langsung belum tersedia di mobile. Harap sinkronisasi file Anda.');
+             return;
+        }
+
         const folderName = editorStore.currentPath.split('/').pop() || 'naskah';
 
         const path = await save({
@@ -131,7 +174,7 @@
 <div class="h-screen flex bg-surface-50 text-surface-900 overflow-hidden font-sans">
     <aside 
         class="bg-surface-100 border-r border-surface-200 flex flex-col transition-all duration-300 ease-in-out overflow-hidden"
-        style="width: {isSidebarOpen ? '260px' : '0px'}; opacity: {isSidebarOpen ? '1' : '0'}"
+        style="width: {isSidebarOpen ? (isMobile ? '80%' : '260px') : '0px'}; opacity: {isSidebarOpen ? '1' : '0'}"
     >
         <div class="p-4 border-b flex items-center justify-between bg-white/50 min-w-[260px]">
             <span class="font-bold tracking-tight text-primary-900">MilkyNote</span>
@@ -205,8 +248,11 @@
                     {#if isSidebarOpen}<PanelLeftClose size={20}/>{:else}<PanelLeftOpen size={20}/>{/if}
                 </button>
 
-                <div class="text-sm font-medium opacity-70 italic">
+                <div class="text-sm font-medium opacity-70 italic flex items-center">
                     {editorStore.activeFileName || 'Menunggu naskah...'}
+                    {#if hasUnsavedChanges}
+                        <span class="ml-2 text-amber-500 text-[10px] uppercase font-bold tracking-widest">• Belum Disimpan</span>
+                    {/if}
                 </div>
             </div>
 

@@ -6,25 +6,21 @@
     "main"
   ],
   "permissions": [
-    "core:default",
-    "fs:allow-read-dir",
-    "fs:allow-read-text-file",
-    "fs:allow-write-text-file",
-    "fs:allow-mkdir",
-    "fs:allow-write-file",
-    "fs:allow-home-write-recursive",
-    "fs:allow-desktop-write-recursive",
-    "fs:allow-document-write-recursive",
-    "dialog:allow-save",
+    "core:app:default",
+    "core:window:default",
+    "core:event:default",
+    "core:path:default",
+    "core:webview:default",
+    "fs:default",
+    "dialog:default",
     {
       "identifier": "fs:scope",
       "allow": [
-        "$HOME/Documents/Note",
-        "$HOME/Documents/Note/*",
-        "$HOME/Documents/Note/**"
+        { "path": "$HOME/Documents/Note" },
+        { "path": "$HOME/Documents/Note/**" },
+        { "path": "/storage/emulated/0/MilkyNote_Sync" },
+        { "path": "/storage/emulated/0/MilkyNote_Sync/**" }
       ]
-    },
-    "dialog:default",
-    "fs:default"
+    }
   ]
 }

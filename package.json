@@ -4,7 +4,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"scripts": {
-		"dev": "vite dev",
+		"dev": "vite dev --host",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
@@ -52,6 +52,7 @@
 		"@lucide/svelte": "^0.562.0",
 		"@tauri-apps/plugin-dialog": "^2.4.2",
 		"@tauri-apps/plugin-fs": "^2.4.4",
+		"@tauri-apps/plugin-os": "^2.3.2",
 		"docx": "^9.5.1",
 		"jspdf": "^4.0.0",
 		"lucide-svelte": "^0.562.0",

@@ -6,13 +6,17 @@
     "main"
   ],
   "permissions": [
-    "core:app:default",
-    "core:window:default",
-    "core:event:default",
-    "core:path:default",
-    "core:webview:default",
+    "core:default",
     "fs:default",
-    "dialog:default",
+    "fs:allow-read",
+    "fs:allow-write",
+    "fs:allow-read-file",
+    "fs:allow-write-file",
+    "fs:allow-rename",
+    "fs:allow-remove",
+    "fs:allow-mkdir",
+    "fs:read-all",
+    "fs:write-all",
     {
       "identifier": "fs:scope",
       "allow": [

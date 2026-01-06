@@ -1,6 +1,7 @@
 import { readDir, readTextFile, writeTextFile, mkdir, remove, rename } from '@tauri-apps/plugin-fs';
 import { type } from '@tauri-apps/plugin-os';
 
+// Helper: Cek apakah jalan di Tauri
 // @ts-ignore
 const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined;
 
@@ -22,21 +23,16 @@ export class EditorStore {
 
     async initPath() {
         if (!isTauri) return;
-
         try {
             const platformName = await type();
-            console.log("Platform terdeteksi:", platformName);
-
+            console.log("Platform:", platformName);
+            
             if (platformName === 'android') {
                 this.rootPath = '/storage/emulated/0/MilkyNote_Sync';
             } else {
                 this.rootPath = '/home/priosmilky/Documents/Note';
             }
-
             this.currentPath = this.rootPath;
-            console.log("Path terpilih:", this.currentPath);
-            
-            // Jeda sedikit agar plugin siap
             setTimeout(() => this.loadFiles(), 500);
         } catch (err) {
             console.error("Gagal init path:", err);
@@ -49,9 +45,7 @@ export class EditorStore {
     async loadFiles() {
         if (!isTauri || !this.currentPath) return;
         try {
-            console.log("Membaca folder:", this.currentPath);
             const entries = await readDir(this.currentPath);
-            
             this.files = entries
                 .map(entry => ({
                     name: entry.name,
@@ -62,7 +56,6 @@ export class EditorStore {
                     if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
                     return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
                 });
-            console.log("File berhasil dimuat:", this.files.length);
         } catch (err) { 
             console.error("Gagal baca folder:", err);
         }
@@ -78,7 +71,8 @@ export class EditorStore {
         try {
             this.activeFileName = item.name;
             this.activeFileId = item.name;
-            this.content = await readTextFile(`${this.currentPath}/${item.name}`);
+            const text = await readTextFile(`${this.currentPath}/${item.name}`);
+            this.content = text;
         } catch (err) { console.error("Gagal baca file:", err); }
     }
 
@@ -86,7 +80,11 @@ export class EditorStore {
         if (!isTauri || !this.activeFileName) return;
         try {
             await writeTextFile(`${this.currentPath}/${this.activeFileName}`, this.content);
-        } catch (err) { console.error("Gagal simpan:", err); }
+            console.log("Tersimpan!");
+        } catch (err) { 
+            console.error("Gagal simpan:", err);
+            alert("Gagal Simpan: " + err);
+        }
     }
 
     async goBack() {
@@ -103,7 +101,10 @@ export class EditorStore {
         try {
             await writeTextFile(`${this.currentPath}/${fileName}`, `# ${name}\n\n`);
             await this.loadFiles();
-        } catch (err) { console.error("Gagal buat file:", err); }
+        } catch (err) { 
+            console.error("Gagal buat file:", err);
+            alert(`Gagal Buat File: ${err}`);
+        }
     }
 
     async createNewFolder(name: string) {
@@ -111,13 +112,14 @@ export class EditorStore {
         try {
             await mkdir(`${this.currentPath}/${name}`);
             await this.loadFiles();
-        } catch (err) { console.error("Gagal buat folder:", err); }
+        } catch (err) { 
+            console.error("Gagal buat folder:", err);
+            alert(`Gagal Buat Folder: ${err}`);
+        }
     }
 
-    async renameItem(oldName: string) {
-        if (!isTauri) return;
-        const newName = prompt("Nama baru:", oldName);
-        if (!newName || newName === oldName) return;
+    async renameItemManual(oldName: string, newName: string) {
+        if (!isTauri || !newName || newName === oldName) return;
         try {
             await rename(`${this.currentPath}/${oldName}`, `${this.currentPath}/${newName}`);
             if (this.activeFileName === oldName) {
@@ -125,11 +127,14 @@ export class EditorStore {
                 this.activeFileId = newName;
             }
             await this.loadFiles();
-        } catch (err) { console.error("Gagal rename:", err); }
+        } catch (err) { 
+            console.error("Gagal rename:", err);
+            alert("Gagal Rename: " + err);
+        }
     }
 
-    async deleteItem(name: string) {
-        if (!isTauri || !confirm(`Hapus "${name}"?`)) return;
+    async deleteItemManual(name: string) {
+        if (!isTauri) return;
         try {
             await remove(`${this.currentPath}/${name}`, { recursive: true });
             if (this.activeFileName === name) {
@@ -138,9 +143,13 @@ export class EditorStore {
                 this.activeFileId = null;
             }
             await this.loadFiles();
-        } catch (err) { console.error("Gagal hapus:", err); }
+        } catch (err) { 
+            console.error("Gagal hapus:", err);
+            alert("Gagal Hapus: " + err);
+        }
     }
 
+    // --- INI FUNGSI YANG TADI HILANG ---
     async getMergedContent() {
         if (!isTauri) return this.content;
         try {
@@ -154,8 +163,11 @@ export class EditorStore {
                 const text = await readTextFile(`${this.currentPath}/${f.name}`);
                 merged += `\n\n# ${f.name.replace('.md', '')}\n\n${text}\n\n---\n`;
             }
-            return merged;
-        } catch (err) { return this.content; }
+            return merged || this.content;
+        } catch (err) { 
+            console.error("Gagal merge content:", err);
+            return this.content; 
+        }
     }
 }
 export const editorStore = new EditorStore();

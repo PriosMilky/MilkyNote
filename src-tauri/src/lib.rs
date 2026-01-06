@@ -4,7 +4,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        // Hapus baris tauri_plugin_opener di sini
+        .plugin(tauri_plugin_path::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

@@ -25,8 +25,6 @@ export class EditorStore {
         if (!isTauri) return;
         try {
             const platformName = await type();
-            console.log("Platform:", platformName);
-            
             if (platformName === 'android') {
                 this.rootPath = '/storage/emulated/0/MilkyNote_Sync';
             } else {
@@ -61,6 +59,49 @@ export class EditorStore {
         }
     }
 
+    // Fungsi untuk membaca isi file teks (Memperbaiki error Property 'readFileContents' does not exist)
+    async readFileContents(fullPath: string) {
+        try {
+            return await readTextFile(fullPath);
+        } catch (err) {
+            console.error("Gagal membaca file:", err);
+            return "";
+        }
+    }
+
+    // Fungsi Rekursif untuk mengambil SEMUA konten di dalam folder dan sub-folder
+    async getRecursiveContent(path: string, level = 0) {
+        let combined = "";
+        try {
+            const entries = await readDir(path);
+            // Sort agar urutan file rapi
+            const sortedEntries = entries.sort((a, b) => {
+                if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+                return a.name.localeCompare(b.name);
+            });
+
+            for (const entry of sortedEntries) {
+                const fullPath = `${path}/${entry.name}`;
+                if (entry.isDirectory) {
+                    combined += `\n${'#'.repeat(level + 1)} FOLDER: ${entry.name.toUpperCase()}\n`;
+                    combined += await this.getRecursiveContent(fullPath, level + 1);
+                } else if (entry.name.endsWith('.md')) {
+                    const text = await readTextFile(fullPath);
+                    combined += `\n\n## ${entry.name.replace('.md', '')}\n\n${text}\n\n---\n`;
+                }
+            }
+        } catch (err) {
+            console.error("Gagal rekursi folder:", err);
+        }
+        return combined;
+    }
+
+    async getMergedContent() {
+        // Sekarang memanggil fungsi rekursif agar sub-folder ikut terambil
+        return await this.getRecursiveContent(this.currentPath);
+    }
+
+    // ... (Fungsi handleItemClick, saveContent, goBack, createNewFile, dll tetap sama)
     async handleItemClick(item: any) {
         if (item.is_dir) {
             this.currentPath = `${this.currentPath}/${item.name}`;
@@ -80,11 +121,7 @@ export class EditorStore {
         if (!isTauri || !this.activeFileName) return;
         try {
             await writeTextFile(`${this.currentPath}/${this.activeFileName}`, this.content);
-            console.log("Tersimpan!");
-        } catch (err) { 
-            console.error("Gagal simpan:", err);
-            alert("Gagal Simpan: " + err);
-        }
+        } catch (err) { alert("Gagal Simpan: " + err); }
     }
 
     async goBack() {
@@ -101,10 +138,7 @@ export class EditorStore {
         try {
             await writeTextFile(`${this.currentPath}/${fileName}`, `# ${name}\n\n`);
             await this.loadFiles();
-        } catch (err) { 
-            console.error("Gagal buat file:", err);
-            alert(`Gagal Buat File: ${err}`);
-        }
+        } catch (err) { alert(`Gagal Buat File: ${err}`); }
     }
 
     async createNewFolder(name: string) {
@@ -112,10 +146,7 @@ export class EditorStore {
         try {
             await mkdir(`${this.currentPath}/${name}`);
             await this.loadFiles();
-        } catch (err) { 
-            console.error("Gagal buat folder:", err);
-            alert(`Gagal Buat Folder: ${err}`);
-        }
+        } catch (err) { alert(`Gagal Buat Folder: ${err}`); }
     }
 
     async renameItemManual(oldName: string, newName: string) {
@@ -127,10 +158,7 @@ export class EditorStore {
                 this.activeFileId = newName;
             }
             await this.loadFiles();
-        } catch (err) { 
-            console.error("Gagal rename:", err);
-            alert("Gagal Rename: " + err);
-        }
+        } catch (err) { alert("Gagal Rename: " + err); }
     }
 
     async deleteItemManual(name: string) {
@@ -143,31 +171,7 @@ export class EditorStore {
                 this.activeFileId = null;
             }
             await this.loadFiles();
-        } catch (err) { 
-            console.error("Gagal hapus:", err);
-            alert("Gagal Hapus: " + err);
-        }
-    }
-
-    // --- INI FUNGSI YANG TADI HILANG ---
-    async getMergedContent() {
-        if (!isTauri) return this.content;
-        try {
-            const entries = await readDir(this.currentPath);
-            const mdFiles = entries
-                .filter(e => !e.isDirectory && e.name.endsWith('.md'))
-                .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-
-            let merged = "";
-            for (const f of mdFiles) {
-                const text = await readTextFile(`${this.currentPath}/${f.name}`);
-                merged += `\n\n# ${f.name.replace('.md', '')}\n\n${text}\n\n---\n`;
-            }
-            return merged || this.content;
-        } catch (err) { 
-            console.error("Gagal merge content:", err);
-            return this.content; 
-        }
+        } catch (err) { alert("Gagal Hapus: " + err); }
     }
 }
 export const editorStore = new EditorStore();

@@ -1,5 +1,6 @@
 <script lang="ts">
     import { editorStore } from '$lib/stores/editor.svelte';
+    import { join } from '@tauri-apps/api/path';
     import { 
         FileText, Folder, Save, Eye, PenLine, Trash2,
         ArrowLeft, Plus, FolderPlus, Download, ChevronDown,
@@ -11,7 +12,6 @@
     import { jsPDF } from 'jspdf';
     import * as docx from 'docx';
     import { type } from '@tauri-apps/plugin-os';
-    import { join } from '@tauri-apps/plugin-path';
 
     const { Document, Packer, Paragraph, TextRun, Footer, PageNumber } = docx;
 
@@ -70,44 +70,58 @@
     async function runExport(format: string) {
         showExportMenu = false;
         try {
-            // 1. Tentukan lokasi folder utama yang mau di-export
             const rootPath = editorStore.currentPath;
             const folderName = rootPath.split('/').pop() || 'Export_MilkyNote';
-            
-            // 2. Kumpulkan semua konten secara rekursif
             let finalContent = "";
 
+            // Fungsi pembantu untuk memproses folder secara mendalam
             async function processFolder(path: string, level = 0) {
-                const entries = await readDir(path);
+                let entries = await readDir(path);
                 
+                // --- KUNCI PERBAIKAN URUTAN (Natural Sort) ---
+                entries.sort((a, b) => {
+                    // Folder selalu di atas file
+                    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+                    
+                    // Urutkan berdasarkan angka (numeric: true) agar 01, 02, 10 berurutan
+                    return a.name.localeCompare(b.name, undefined, { 
+                        numeric: true, 
+                        sensitivity: 'base' 
+                    });
+                });
+
                 for (const entry of entries) {
                     const fullPath = await join(path, entry.name);
                     
                     if (entry.isDirectory) {
-                        // Tambahkan judul folder ke naskah jika perlu
-                        finalContent += `\n${'#'.repeat(level + 1)} FOLDER: ${entry.name}\n\n`;
+                        finalContent += `\n${'#'.repeat(level + 1)} FOLDER: ${entry.name.toUpperCase()}\n\n`;
                         await processFolder(fullPath, level + 1);
                     } else if (entry.name.endsWith('.md') || entry.name.endsWith('.txt')) {
-                        // Baca isi file
-                        const text = await editorStore.readFileContents(fullPath); // Pastikan store punya fungsi ini
+                        const text = await editorStore.readFileContents(fullPath);
                         finalContent += `\n--- START: ${entry.name} ---\n\n${text}\n\n`;
                     }
                 }
             }
 
-            // Jalankan rekursi
+            // Mulai proses
             await processFolder(rootPath);
 
-            // 3. Tentukan tempat simpan hasil export
             const fileName = `${folderName}_Full.${format.toLowerCase()}`;
-            let savePath = isMobile ? `${rootPath}/${fileName}` : await save({ defaultPath: fileName });
+            
+            // Logika Save Path (Android 10 & Desktop)
+            let savePath: string | null;
+            if (isMobile) {
+                savePath = await join(rootPath, fileName);
+            } else {
+                savePath = await save({ defaultPath: fileName });
+            }
 
             if (!savePath) return;
 
             const data = await generateExportData(format, finalContent);
             await writeFile(savePath, data);
             
-            alert(`Berhasil meng-export seluruh folder!\nLokasi: ${savePath}`);
+            alert(`Berhasil!\nNaskah gabungan disimpan di:\n${savePath}`);
         } catch (err) {
             console.error(err);
             alert('Gagal export folder: ' + err);
